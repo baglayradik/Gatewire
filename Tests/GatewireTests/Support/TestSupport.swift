@@ -31,7 +31,10 @@ struct TestEndpoint: Endpoint {
     var headers: HTTPHeaders = [:]
     var timeoutInterval: TimeInterval?
     var jsonEncoder = JSONEncoder()
+    var formEncoderFactory: @Sendable () -> URLEncodedFormEncoder = { URLEncodedFormEncoder() }
     var decoder: (any DataDecoder)?
+
+    var formEncoder: URLEncodedFormEncoder { formEncoderFactory() }
 }
 
 /// Клиент, запросы которого обрабатывает `MockURLProtocol`, и базовый адрес с уникальным хостом.

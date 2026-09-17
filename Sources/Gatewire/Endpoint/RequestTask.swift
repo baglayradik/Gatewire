@@ -38,21 +38,21 @@ public enum RequestTask: Sendable {
     /// - Parameters:
     ///   - request: Запрос, в который добавляются параметры и тело.
     ///   - jsonEncoder: Кодировщик JSON-тела.
+    ///   - formEncoder: Кодировщик параметров строки запроса и form-тела.
     /// - Throws: ``NetworkError/encodingFailed(_:)``, если не удалось закодировать параметры или тело.
     public func encode(
         into request: URLRequest,
-        jsonEncoder: JSONEncoder = JSONEncoder()
+        jsonEncoder: JSONEncoder = JSONEncoder(),
+        formEncoder: URLEncodedFormEncoder = URLEncodedFormEncoder()
     ) throws -> URLRequest {
+        let queryEncoder = URLEncodedFormParameterEncoder(encoder: formEncoder, destination: .queryString)
+
         switch self {
         case .plain, .multipart:
             return request
 
         case let .query(parameters):
-            return try Self.encode(
-                parameters,
-                using: URLEncodedFormParameterEncoder(destination: .queryString),
-                into: request
-            )
+            return try Self.encode(parameters, using: queryEncoder, into: request)
 
         case let .json(body):
             return try Self.encode(
@@ -64,16 +64,12 @@ public enum RequestTask: Sendable {
         case let .form(parameters):
             return try Self.encode(
                 parameters,
-                using: URLEncodedFormParameterEncoder(destination: .httpBody),
+                using: URLEncodedFormParameterEncoder(encoder: formEncoder, destination: .httpBody),
                 into: request
             )
 
         case let .queryAndJSON(query, body):
-            let requestWithQuery = try Self.encode(
-                query,
-                using: URLEncodedFormParameterEncoder(destination: .queryString),
-                into: request
-            )
+            let requestWithQuery = try Self.encode(query, using: queryEncoder, into: request)
             return try Self.encode(
                 body,
                 using: JSONParameterEncoder(encoder: jsonEncoder),

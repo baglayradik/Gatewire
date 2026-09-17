@@ -10,6 +10,10 @@ Gatewire позволяет описывать API роутерами, реал�
 
 ## Topics
 
+### Статьи
+
+- <doc:APIFormats>
+
 ### Описание запросов
 
 - ``Endpoint``
@@ -20,11 +24,17 @@ Gatewire позволяет описывать API роутерами, реал�
 - ``APIClient``
 - ``APIConfiguration``
 - ``APIResponse``
+- ``TransferProgress``
+- ``TransferProgressHandler``
 
 ### Разбор ответов
 
 - ``ResponseDecoder``
+- ``ResponseDecodingContext``
 - ``DecodableResponseDecoder``
+- ``NestedResponseDecoder``
+- ``EnvelopeDecoder``
+- ``ResponseEnvelope``
 - ``StringResponseDecoder``
 
 ### Ошибки

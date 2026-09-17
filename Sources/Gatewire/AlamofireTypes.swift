@@ -10,5 +10,6 @@ public typealias HTTPHeaders = Alamofire.HTTPHeaders
 public typealias HTTPHeader = Alamofire.HTTPHeader
 public typealias MultipartFormData = Alamofire.MultipartFormData
 public typealias DataDecoder = Alamofire.DataDecoder
+public typealias URLEncodedFormEncoder = Alamofire.URLEncodedFormEncoder
 public typealias EventMonitor = Alamofire.EventMonitor
 public typealias RequestInterceptor = Alamofire.RequestInterceptor

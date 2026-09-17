@@ -71,6 +71,23 @@ struct RequestTaskTests {
         #expect(request.value(forHTTPHeaderField: "Content-Type") == "application/xml")
     }
 
+    @Test("formEncoder эндпоинта управляет форматом массивов и булевых значений")
+    func customFormEncoder() throws {
+        let parameters = QueryParameters(ids: [1, 2], active: true)
+
+        let defaultRequest = try request(.query(parameters), method: .get)
+        #expect(defaultRequest.url?.query == "active=1&ids%5B%5D=1&ids%5B%5D=2")
+
+        var endpoint = TestEndpoint(baseURL: baseURL, task: .query(parameters))
+        endpoint.formEncoderFactory = { URLEncodedFormEncoder(arrayEncoding: .noBrackets, boolEncoding: .literal) }
+        #expect(try endpoint.asURLRequest().url?.query == "active=true&ids=1&ids=2")
+
+        endpoint.task = .form(parameters)
+        endpoint.method = .post
+        let body = try #require(try endpoint.asURLRequest().httpBody)
+        #expect(String(decoding: body, as: UTF8.self) == "active=true&ids=1&ids=2")
+    }
+
     @Test("Content-Type из заголовков эндпоинта не перезаписывается")
     func explicitContentTypeWins() throws {
         let headers: HTTPHeaders = ["Content-Type": "application/vnd.api+json"]
@@ -91,6 +108,11 @@ struct RequestTaskTests {
             return true
         }
     }
+}
+
+private struct QueryParameters: Encodable, Sendable {
+    let ids: [Int]
+    let active: Bool
 }
 
 private struct FailingEncodable: Encodable, Sendable {

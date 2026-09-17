@@ -125,6 +125,21 @@ let response = try await client.response(UserRouter.profile, as: UserDTO.self)
 print(response.statusCode, response.headers)
 ```
 
+Ответы в обёртке, файлы и прогресс:
+
+```swift
+// { "data": { "items": [ ... ] } }
+let feed = try await client.request(PostRouter.feed, decoder: .nested([PostDTO].self, at: "data.items"))
+
+let avatar = try await client.upload(UserRouter.uploadAvatar(jpegData), as: AvatarDTO.self) { progress in
+    uploadFraction = progress.fractionCompleted
+}
+
+try await client.download(ReportRouter.pdf(id: 42), to: destination)
+```
+
+Подробнее об обёртках, GraphQL, XML и Protobuf — в статье документации «Работа с разными форматами API».
+
 Все методы бросают `NetworkError`:
 
 ```swift
@@ -143,7 +158,7 @@ do {
 
 - [x] Каркас пакета, CI и файлы сообщества
 - [x] Ядро: эндпоинты, `RequestTask`, `APIClient`, модель ошибок
-- [ ] Форматы запросов и ответов
+- [x] Форматы запросов и ответов
 - [ ] Стратегии авторизации и хранение учётных данных
 - [ ] Повторы запросов, логирование с маскированием секретов, проверка сертификатов сервера
 - [ ] Модуль `GatewireTesting`

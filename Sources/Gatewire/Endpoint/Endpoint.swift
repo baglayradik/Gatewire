@@ -86,6 +86,20 @@ public protocol Endpoint: URLRequestConvertible, Sendable {
     /// По умолчанию `JSONEncoder()`.
     var jsonEncoder: JSONEncoder { get }
 
+    /// Кодировщик параметров ``RequestTask/query(_:)``, ``RequestTask/form(_:)``
+    /// и строки запроса в ``RequestTask/queryAndJSON(query:body:)``. По умолчанию `URLEncodedFormEncoder()`.
+    ///
+    /// Настройте его, если API ожидает другой формат массивов, булевых значений или пробелов:
+    ///
+    /// ```swift
+    /// var formEncoder: URLEncodedFormEncoder {
+    ///     URLEncodedFormEncoder(arrayEncoding: .noBrackets, boolEncoding: .literal)
+    /// }
+    /// ```
+    ///
+    /// Возвращайте новый экземпляр при каждом обращении: `URLEncodedFormEncoder` не является `Sendable`.
+    var formEncoder: URLEncodedFormEncoder { get }
+
     /// Декодер ответов для этого эндпоинта. По умолчанию `nil` — используется ``APIConfiguration/decoder``.
     var decoder: (any DataDecoder)? { get }
 }
@@ -96,6 +110,7 @@ extension Endpoint {
     public var headers: HTTPHeaders { [:] }
     public var timeoutInterval: TimeInterval? { nil }
     public var jsonEncoder: JSONEncoder { JSONEncoder() }
+    public var formEncoder: URLEncodedFormEncoder { URLEncodedFormEncoder() }
     public var decoder: (any DataDecoder)? { nil }
 
     /// Собирает `URLRequest` из ``baseURL``, ``path``, ``method``, ``headers``, ``timeoutInterval`` и ``task``.
@@ -106,7 +121,7 @@ extension Endpoint {
         if let timeoutInterval {
             request.timeoutInterval = timeoutInterval
         }
-        return try task.encode(into: request, jsonEncoder: jsonEncoder)
+        return try task.encode(into: request, jsonEncoder: jsonEncoder, formEncoder: formEncoder)
     }
 
     static func url(baseURL: URL, path: String) -> URL {

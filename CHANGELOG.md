@@ -20,3 +20,9 @@
 - `NetworkError` и протокол `APIErrorMapper` для доменных ошибок API.
 - `ResponseDecoder` с реализациями `DecodableResponseDecoder` и `StringResponseDecoder`.
 - Пресеты `JSONDecoder.snakeCaseISO8601` и `JSONEncoder.snakeCaseISO8601`.
+- `Endpoint.formEncoder` для настройки формата массивов, булевых значений и пробелов в query и form.
+- `ResponseDecodingContext`: декодеры ответов получают HTTP-ответ и декодер эндпоинта.
+- `NestedResponseDecoder` (`.nested(_:at:)`) для значений, вложенных в ответ по пути из ключей.
+- `ResponseEnvelope` и `EnvelopeDecoder` (`.envelope(_:)`) для ответов в обёртке с ошибками в теле.
+- `APIClient.upload` с прогрессом отправки и `APIClient.download` в файл с прогрессом скачивания.
+- Статья документации «Работа с разными форматами API» с примерами GraphQL и своего декодера.

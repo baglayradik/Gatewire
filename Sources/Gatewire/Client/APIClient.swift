@@ -78,10 +78,7 @@ public final class APIClient: Sendable {
         _ endpoint: some Endpoint,
         as type: Value.Type = Value.self
     ) async throws(NetworkError) -> APIResponse<Value> {
-        let decoder = DecodableResponseDecoder<Value>(
-            decoder: endpoint.decoder ?? configuration.decoder
-        )
-        return try await response(endpoint, decoder: decoder)
+        try await response(endpoint, decoder: DecodableResponseDecoder<Value>())
     }
 
     /// Выполняет запрос, декодирует ответ указанным декодером и возвращает значение вместе с HTTP-ответом.
@@ -89,13 +86,7 @@ public final class APIClient: Sendable {
         _ endpoint: some Endpoint,
         decoder: Decoder
     ) async throws(NetworkError) -> APIResponse<Decoder.Output> {
-        let (data, response) = try await perform(endpoint)
-        do {
-            let value = try decoder.decode(data, response: response)
-            return APIResponse(value: value, response: response, data: data)
-        } catch {
-            throw .decodingFailed(error, data: data)
-        }
+        try await decode(endpoint, decoder: decoder, uploadProgress: nil)
     }
 
     /// Выполняет запрос без разбора тела ответа — проверяется только код ответа.
@@ -108,10 +99,151 @@ public final class APIClient: Sendable {
         try await perform(endpoint).data
     }
 
+    // MARK: - Загрузка и скачивание
+
+    /// Отправляет тело запроса с отслеживанием прогресса и декодирует `Decodable`-ответ.
+    ///
+    /// Подходит для любого ``RequestTask`` с телом, чаще всего ``RequestTask/multipart(_:)``.
+    ///
+    /// ```swift
+    /// let avatar = try await client.upload(UserRouter.uploadAvatar(jpegData), as: AvatarDTO.self) { progress in
+    ///     self.uploadFraction = progress.fractionCompleted
+    /// }
+    /// ```
+    ///
+    /// - Parameters:
+    ///   - endpoint: Эндпоинт запроса.
+    ///   - type: Тип ответа.
+    ///   - progress: Обработчик прогресса отправки, вызывается на главном потоке.
+    public func upload<Value: Decodable & Sendable>(
+        _ endpoint: some Endpoint,
+        as type: Value.Type,
+        progress: @escaping TransferProgressHandler
+    ) async throws(NetworkError) -> Value {
+        try await decode(endpoint, decoder: DecodableResponseDecoder<Value>(), uploadProgress: progress).value
+    }
+
+    /// Отправляет тело запроса с отслеживанием прогресса и декодирует ответ указанным декодером.
+    ///
+    /// - Parameters:
+    ///   - endpoint: Эндпоинт запроса.
+    ///   - decoder: Декодер ответа.
+    ///   - progress: Обработчик прогресса отправки, вызывается на главном потоке.
+    public func upload<Decoder: ResponseDecoder>(
+        _ endpoint: some Endpoint,
+        decoder: Decoder,
+        progress: @escaping TransferProgressHandler
+    ) async throws(NetworkError) -> Decoder.Output {
+        try await decode(endpoint, decoder: decoder, uploadProgress: progress).value
+    }
+
+    /// Отправляет тело запроса с отслеживанием прогресса без разбора тела ответа.
+    ///
+    /// - Parameters:
+    ///   - endpoint: Эндпоинт запроса.
+    ///   - progress: Обработчик прогресса отправки, вызывается на главном потоке.
+    public func upload(
+        _ endpoint: some Endpoint,
+        progress: @escaping TransferProgressHandler
+    ) async throws(NetworkError) {
+        _ = try await perform(endpoint, uploadProgress: progress)
+    }
+
+    /// Скачивает тело ответа в файл.
+    ///
+    /// Промежуточные папки создаются автоматически, существующий файл по адресу `destination` заменяется.
+    /// Если сервер вернул недопустимый код ответа, скачанный файл удаляется, а его содержимое
+    /// приходит в ошибке как тело ответа.
+    ///
+    /// ```swift
+    /// let fileURL = try await client.download(
+    ///     ReportRouter.pdf(id: 42),
+    ///     to: .documentsDirectory.appending(path: "report-42.pdf")
+    /// ) { progress in
+    ///     self.downloadFraction = progress.fractionCompleted
+    /// }
+    /// ```
+    ///
+    /// - Parameters:
+    ///   - endpoint: Эндпоинт запроса. ``RequestTask/multipart(_:)`` не поддерживается.
+    ///   - destination: Адрес файла, в который сохраняется ответ.
+    ///   - progress: Обработчик прогресса скачивания, вызывается на главном потоке.
+    /// - Returns: Адрес сохранённого файла.
+    @discardableResult
+    public func download(
+        _ endpoint: some Endpoint,
+        to destination: URL,
+        progress: TransferProgressHandler? = nil
+    ) async throws(NetworkError) -> URL {
+        guard Task.isCancelled == false else { throw .cancelled }
+
+        if case .multipart = endpoint.task {
+            throw .invalidRequest(UsageError("Скачивание в файл не поддерживает multipart-запросы."))
+        }
+
+        let urlRequest = try makeURLRequest(for: endpoint)
+        let request = session.download(urlRequest) { _, _ in
+            (destination, [.createIntermediateDirectories, .removePreviousFile])
+        }
+        if let progress {
+            request.downloadProgress(queue: .main) { value in
+                let transferProgress = TransferProgress(value)
+                MainActor.assumeIsolated { progress(transferProgress) }
+            }
+        }
+
+        let downloadResponse = await request
+            .validate(statusCode: configuration.acceptableStatusCodes)
+            .serializingDownloadedFileURL()
+            .response
+
+        switch downloadResponse.result {
+        case let .success(fileURL):
+            return fileURL
+
+        case let .failure(error):
+            // При недопустимом коде ответа в файл сохраняется тело ошибки: передаём его в ошибку
+            // и не оставляем вместо ожидаемого файла.
+            var errorData: Data?
+            if let fileURL = downloadResponse.fileURL {
+                errorData = try? Data(contentsOf: fileURL)
+                try? FileManager.default.removeItem(at: fileURL)
+            }
+            throw NetworkError(
+                error,
+                response: downloadResponse.response,
+                data: errorData,
+                errorMapper: configuration.errorMapper
+            )
+        }
+    }
+
     // MARK: - Выполнение
 
+    func decode<Decoder: ResponseDecoder>(
+        _ endpoint: some Endpoint,
+        decoder: Decoder,
+        uploadProgress: TransferProgressHandler?
+    ) async throws(NetworkError) -> APIResponse<Decoder.Output> {
+        let (data, response) = try await perform(endpoint, uploadProgress: uploadProgress)
+        let context = ResponseDecodingContext(
+            response: response,
+            dataDecoder: endpoint.decoder ?? configuration.decoder
+        )
+
+        do {
+            let value = try decoder.decode(data, context: context)
+            return APIResponse(value: value, response: response, data: data)
+        } catch let error as NetworkError {
+            throw error
+        } catch {
+            throw .decodingFailed(error, data: data)
+        }
+    }
+
     func perform(
-        _ endpoint: some Endpoint
+        _ endpoint: some Endpoint,
+        uploadProgress: TransferProgressHandler? = nil
     ) async throws(NetworkError) -> (data: Data, response: HTTPURLResponse) {
         guard Task.isCancelled == false else { throw .cancelled }
 
@@ -121,6 +253,13 @@ public final class APIClient: Sendable {
             session.upload(multipartFormData: buildFormData, with: urlRequest)
         default:
             session.request(urlRequest)
+        }
+
+        if let uploadProgress {
+            request.uploadProgress(queue: .main) { value in
+                let transferProgress = TransferProgress(value)
+                MainActor.assumeIsolated { uploadProgress(transferProgress) }
+            }
         }
 
         let dataResponse = await request
@@ -164,6 +303,15 @@ public final class APIClient: Sendable {
         }
         request.timeoutInterval = endpoint.timeoutInterval ?? configuration.timeout
         return request
+    }
+}
+
+/// Ошибка неверного использования API клиента.
+struct UsageError: Error, CustomStringConvertible {
+    let description: String
+
+    init(_ description: String) {
+        self.description = description
     }
 }
 
