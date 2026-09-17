@@ -1,0 +1,23 @@
+name: Запрос новой возможности
+description: Предложить новую возможность или изменение API.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Проблема
+      description: Что вы хотите сделать и почему это сложно сделать с Gatewire сейчас?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Предлагаемое решение
+      description: Как это должно работать? Набросок API очень поможет.
+      render: swift
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Рассмотренные альтернативы

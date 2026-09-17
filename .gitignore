@@ -1,0 +1,21 @@
+# macOS
+.DS_Store
+
+# Swift Package Manager
+.build/
+.swiftpm/
+/Packages
+# Gatewire — библиотека: проекты сами выбирают версии зависимостей,
+# а CI всегда проверяет пакет с новейшим совместимым релизом Alamofire.
+Package.resolved
+
+# Xcode
+xcuserdata/
+DerivedData/
+*.xcodeproj
+*.xcworkspace
+!Examples/**/*.xcodeproj
+!Examples/**/*.xcworkspace
+
+# DocC
+.docc-build/

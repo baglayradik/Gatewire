@@ -1,0 +1,41 @@
+name: API breaking changes
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  api-check:
+    name: Diagnose API breaking changes
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Find baseline release
+        id: baseline
+        run: |
+          tag=$(git tag --list '[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n 1)
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if [ -z "$tag" ]; then
+            echo "::notice::No release tags yet, skipping the API check."
+          fi
+
+      - name: Diagnose
+        if: steps.baseline.outputs.tag != ''
+        env:
+          BASELINE: ${{ steps.baseline.outputs.tag }}
+        run: |
+          if swift package diagnose-api-breaking-changes "$BASELINE" --products Gatewire GatewireTesting; then
+            exit 0
+          fi
+          # До 1.0.0 ломающие изменения допустимы в minor-релизах: сообщаем о них, но не роняем проверку.
+          if [[ "$BASELINE" == 0.* ]]; then
+            echo "::warning::Public API changed in a breaking way compared to $BASELINE. Mention it in CHANGELOG.md."
+            exit 0
+          fi
+          echo "::error::Public API changed in a breaking way compared to $BASELINE. This requires a major version bump."
+          exit 1

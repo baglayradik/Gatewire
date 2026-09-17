@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    name: macOS (SwiftPM)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Build
+        run: swift build -Xswiftc -warnings-as-errors
+
+      - name: Test
+        run: swift test -Xswiftc -warnings-as-errors
+
+  ios:
+    name: iOS Simulator
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Pick simulator
+        id: simulator
+        run: |
+          udid=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          devices = json.load(sys.stdin)["devices"]
+          print(next(d["udid"] for runtime, list_ in devices.items() if "iOS" in runtime
+                     for d in list_ if d["name"].startswith("iPhone")))
+          ')
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+
+      # SWIFT_TREAT_WARNINGS_AS_ERRORS нельзя использовать с xcodebuild: он конфликтует с подавлением
+      # предупреждений, которое Xcode применяет к зависимостям. Поэтому проверяем предупреждения только в коде Gatewire.
+      - name: Test
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -scheme Gatewire-Package \
+            -destination "platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}" \
+            | tee xcodebuild.log
+          ! grep -E "^$GITHUB_WORKSPACE/(Sources|Tests)/[^:]+:[0-9]+:[0-9]+: warning:" xcodebuild.log
+
+  other-platforms:
+    name: Build (${{ matrix.platform }})
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [tvOS Simulator, watchOS Simulator]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -scheme Gatewire \
+            -destination "generic/platform=${{ matrix.platform }}" \
+            | tee xcodebuild.log
+          ! grep -E "^$GITHUB_WORKSPACE/(Sources|Tests)/[^:]+:[0-9]+:[0-9]+: warning:" xcodebuild.log
