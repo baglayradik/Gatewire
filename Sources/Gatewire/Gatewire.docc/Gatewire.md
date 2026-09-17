@@ -13,6 +13,7 @@ Gatewire позволяет описывать API роутерами, реал�
 ### Статьи
 
 - <doc:APIFormats>
+- <doc:Authorization>
 
 ### Описание запросов
 
@@ -36,6 +37,28 @@ Gatewire позволяет описывать API роутерами, реал�
 - ``EnvelopeDecoder``
 - ``ResponseEnvelope``
 - ``StringResponseDecoder``
+
+### Авторизация
+
+- ``AuthStrategy``
+- ``AuthorizationRequirement``
+- ``AuthSchemeID``
+- ``AuthController``
+- ``AuthEvent``
+- ``APIKeyLocation``
+
+### Учётные данные и их хранение
+
+- ``RefreshableCredential``
+- ``CredentialRefresher``
+- ``CredentialStore``
+- ``KeychainCredentialStore``
+- ``InMemoryCredentialStore``
+- ``OAuth2Credential``
+- ``OAuth2TokenResponse``
+- ``OAuth2TokenRefresher``
+- ``OAuth2Error``
+- ``KeychainError``
 
 ### Ошибки
 

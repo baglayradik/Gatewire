@@ -20,6 +20,18 @@ public struct APIConfiguration: Sendable {
     /// Декодер ответов для эндпоинтов, у которых ``Endpoint/decoder`` равен `nil`. По умолчанию `JSONDecoder()`.
     public var decoder: any DataDecoder = JSONDecoder()
 
+    /// Стратегия авторизации схемы ``AuthSchemeID/default``. По умолчанию `nil` — запросы без авторизации.
+    public var auth: AuthStrategy?
+
+    /// Дополнительные схемы авторизации, если клиент работает с несколькими видами учётных данных.
+    public var additionalAuth: [AuthSchemeID: AuthStrategy] = [:]
+
+    /// Требование авторизации для эндпоинтов с ``AuthorizationRequirement/inherit``.
+    ///
+    /// По умолчанию ``AuthorizationRequirement/inherit``: это значит ``AuthorizationRequirement/required``,
+    /// если задана ``auth`` или ``additionalAuth``, и ``AuthorizationRequirement/none``, если стратегий нет.
+    public var defaultAuthorization: AuthorizationRequirement = .inherit
+
     /// Преобразователь тел ответов с ошибкой в доменные ошибки API. По умолчанию `nil`.
     public var errorMapper: (any APIErrorMapper)?
 

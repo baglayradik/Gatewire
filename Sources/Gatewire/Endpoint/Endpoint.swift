@@ -76,6 +76,19 @@ public protocol Endpoint: URLRequestConvertible, Sendable {
     /// Имеют приоритет над ``APIConfiguration/defaultHeaders``.
     var headers: HTTPHeaders { get }
 
+    /// Нужны ли запросу учётные данные. По умолчанию ``AuthorizationRequirement/inherit``,
+    /// то есть требование берётся из ``APIConfiguration/defaultAuthorization``.
+    ///
+    /// ```swift
+    /// var authorization: AuthorizationRequirement {
+    ///     switch self {
+    ///     case .signIn, .refresh: .none
+    ///     case .signOut:          .required
+    ///     }
+    /// }
+    /// ```
+    var authorization: AuthorizationRequirement { get }
+
     /// Таймаут запроса в секундах. По умолчанию `nil` — используется ``APIConfiguration/timeout``.
     ///
     /// ``APIClient`` всегда выставляет таймаут по этому свойству, поэтому задавайте его здесь,
@@ -108,6 +121,7 @@ extension Endpoint {
     public var method: HTTPMethod { .get }
     public var task: RequestTask { .plain }
     public var headers: HTTPHeaders { [:] }
+    public var authorization: AuthorizationRequirement { .inherit }
     public var timeoutInterval: TimeInterval? { nil }
     public var jsonEncoder: JSONEncoder { JSONEncoder() }
     public var formEncoder: URLEncodedFormEncoder { URLEncodedFormEncoder() }

@@ -140,6 +140,47 @@ try await client.download(ReportRouter.pdf(id: 42), to: destination)
 
 Подробнее об обёртках, GraphQL, XML и Protobuf — в статье документации «Работа с разными форматами API».
 
+### 4. Настройте авторизацию
+
+```swift
+let client = APIClient {
+    $0.auth = .oauth2(
+        tokenURL: AppConfig.apiBaseURL.appendingPathComponent("oauth/token"),
+        clientID: "ios-app",
+        keychainService: "com.company.app.auth",
+        allowedHosts: ["api.example.com"]
+    )
+}
+
+// вход: первый токен получаем запросом без авторизации
+let tokens = try await client.request(AuthRouter.signIn(credentials), as: OAuth2TokenResponse.self)
+try await client.auth.signIn(with: OAuth2Credential(tokens))
+```
+
+Каждый эндпоинт указывает, нужны ли ему учётные данные:
+
+```swift
+var authorization: AuthorizationRequirement {
+    switch self {
+    case .signIn:  .none      // запрос без авторизации
+    case .signOut: .required  // запрос с токеном
+    }
+}
+```
+
+Токен подставляется автоматически, обновляется при истечении или ответе 401, причём **один раз
+на все параллельные запросы**. Если обновление не удалось, приходит событие:
+
+```swift
+for await event in client.auth.events() {
+    if case .refreshFailed = event {
+        await router.showLogin()
+    }
+}
+```
+
+Подробнее — в статье документации «Авторизация».
+
 Все методы бросают `NetworkError`:
 
 ```swift
@@ -159,7 +200,7 @@ do {
 - [x] Каркас пакета, CI и файлы сообщества
 - [x] Ядро: эндпоинты, `RequestTask`, `APIClient`, модель ошибок
 - [x] Форматы запросов и ответов
-- [ ] Стратегии авторизации и хранение учётных данных
+- [x] Стратегии авторизации и хранение учётных данных
 - [ ] Повторы запросов, логирование с маскированием секретов, проверка сертификатов сервера
 - [ ] Модуль `GatewireTesting`
 - [ ] Документация и пример приложения

@@ -21,6 +21,14 @@ public enum NetworkError: Error, Sendable {
     /// Не удалось декодировать тело успешного ответа.
     case decodingFailed(any Error, data: Data)
 
+    /// Запрос требует авторизации, но учётных данных нет.
+    ///
+    /// Запрос не отправляется. Обычно означает, что нужно показать экран входа.
+    case unauthenticated
+
+    /// Обновить учётные данные не удалось: сессия закончилась или token endpoint вернул ошибку.
+    case authenticationFailed(any Error)
+
     /// Запрос отменён, например вместе с задачей, в которой он выполнялся.
     case cancelled
 

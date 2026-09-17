@@ -26,3 +26,12 @@
 - `ResponseEnvelope` и `EnvelopeDecoder` (`.envelope(_:)`) для ответов в обёртке с ошибками в теле.
 - `APIClient.upload` с прогрессом отправки и `APIClient.download` в файл с прогрессом скачивания.
 - Статья документации «Работа с разными форматами API» с примерами GraphQL и своего декодера.
+- `Endpoint.authorization` и `AuthorizationRequirement`: запросы из авторизованной и неавторизованной зоны.
+- `AuthStrategy`: стратегии `bearer`, `apiKey`, `basic`, `oauth2`, `refreshable` и `custom`.
+- Ограничение хостов (`allowedHosts`), на которые отправляются учётные данные.
+- Обновление токена одним запросом на все параллельные запросы через `AuthenticationInterceptor` Alamofire.
+- `RefreshableCredential`, `CredentialRefresher`, `OAuth2Credential` и `OAuth2TokenRefresher` по RFC 6749.
+- `CredentialStore` с реализациями `KeychainCredentialStore` и `InMemoryCredentialStore`.
+- `APIClient.auth` (`AuthController`): вход, выход, текущие учётные данные и поток событий `AuthEvent`.
+- `NetworkError.unauthenticated` и `NetworkError.authenticationFailed` в модели ошибок.
+- Статья документации «Авторизация».

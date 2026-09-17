@@ -13,6 +13,19 @@ extension NetworkError {
             self = networkError
             return
         }
+        if let authFailure = error as? AuthenticationFailure {
+            switch authFailure {
+            case .missingCredential:
+                self = .unauthenticated
+            case let .refreshFailed(underlyingError):
+                self = .authenticationFailed(underlyingError)
+            }
+            return
+        }
+        if let authError = error as? AuthenticationError {
+            self = authError == .missingCredential ? .unauthenticated : .authenticationFailed(authError)
+            return
+        }
         if let urlError = error as? URLError {
             self = urlError.code == .cancelled ? .cancelled : .transport(urlError)
             return
@@ -38,9 +51,18 @@ extension NetworkError {
                 self = .unacceptableStatusCode(response: response, data: data)
             }
 
+        case let .requestRetryFailed(retryError, originalError):
+            // Если повтор не состоялся из-за авторизации, важнее её ошибка, а не исходный ответ.
+            let isAuthFailure = retryError is AuthenticationFailure || retryError is AuthenticationError
+            self = NetworkError(
+                isAuthFailure ? retryError : originalError,
+                response: response,
+                data: data,
+                errorMapper: errorMapper
+            )
+
         case let .sessionTaskFailed(underlyingError),
-             let .requestAdaptationFailed(underlyingError),
-             let .requestRetryFailed(_, underlyingError):
+             let .requestAdaptationFailed(underlyingError):
             self = NetworkError(
                 underlyingError,
                 response: response,

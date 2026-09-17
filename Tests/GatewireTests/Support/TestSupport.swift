@@ -29,6 +29,7 @@ struct TestEndpoint: Endpoint {
     var method: HTTPMethod = .get
     var task: RequestTask = .plain
     var headers: HTTPHeaders = [:]
+    var authorization: AuthorizationRequirement = .inherit
     var timeoutInterval: TimeInterval?
     var jsonEncoder = JSONEncoder()
     var formEncoderFactory: @Sendable () -> URLEncodedFormEncoder = { URLEncodedFormEncoder() }
@@ -43,6 +44,9 @@ struct MockServer: Sendable {
     let baseURL: URL
     let lastRequest = Locked<URLRequest?>(nil)
 
+    /// Все запросы, которые дошли до сети, в порядке отправки.
+    let requests = Locked<[URLRequest]>([])
+
     init(handler: @escaping MockURLProtocol.Handler = { request in try MockServer.respond(to: request) }) {
         self.init(configure: { _ in }, handler: handler)
     }
@@ -51,31 +55,51 @@ struct MockServer: Sendable {
         configure: (inout APIConfiguration) -> Void,
         handler: @escaping MockURLProtocol.Handler = { request in try MockServer.respond(to: request) }
     ) {
-        let host = "\(UUID().uuidString.lowercased()).gatewire.test"
         let lastRequest = lastRequest
-        MockURLProtocol.register(host: host) { request in
+        let requests = requests
+        let (host, baseURL) = MockServer.registerHost { request in
             lastRequest.withValue { $0 = request }
+            requests.withValue { $0.append(request) }
             return try await handler(request)
         }
+        _ = host
 
-        baseURL = URL(string: "https://\(host)/v1")!
+        self.baseURL = baseURL
         client = APIClient {
-            $0.sessionConfiguration = {
-                let configuration = URLSessionConfiguration.ephemeral
-                configuration.protocolClasses = [MockURLProtocol.self]
-                return configuration
-            }
+            $0.sessionConfiguration = MockServer.sessionConfiguration
             configure(&$0)
         }
+    }
+
+    /// Регистрирует уникальный хост в `MockURLProtocol` и возвращает его вместе с базовым адресом.
+    static func registerHost(handler: @escaping MockURLProtocol.Handler) -> (host: String, baseURL: URL) {
+        let host = "\(UUID().uuidString.lowercased()).gatewire.test"
+        MockURLProtocol.register(host: host, handler: handler)
+
+        return (host, URL(string: "https://\(host)/v1")!)
+    }
+
+    static let sessionConfiguration: @Sendable () -> URLSessionConfiguration = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        return configuration
     }
 
     func endpoint(
         path: String = "items",
         method: HTTPMethod = .get,
         task: RequestTask = .plain,
-        headers: HTTPHeaders = [:]
+        headers: HTTPHeaders = [:],
+        authorization: AuthorizationRequirement = .inherit
     ) -> TestEndpoint {
-        TestEndpoint(baseURL: baseURL, path: path, method: method, task: task, headers: headers)
+        TestEndpoint(
+            baseURL: baseURL,
+            path: path,
+            method: method,
+            task: task,
+            headers: headers,
+            authorization: authorization
+        )
     }
 
     static func respond(
@@ -97,6 +121,47 @@ func networkError(_ operation: () async throws(NetworkError) -> Void) async -> N
         return nil
     } catch {
         return error
+    }
+}
+
+/// Собирает события авторизации, пока идёт тест.
+final class AuthEventRecorder: Sendable {
+    private let events = Locked<[AuthEvent]>([])
+    private let task = Locked<Task<Void, Never>?>(nil)
+
+    init(_ controller: AuthController) {
+        let events = events
+        let stream = controller.events()
+        task.withValue { task in
+            task = Task {
+                for await event in stream {
+                    events.withValue { $0.append(event) }
+                }
+            }
+        }
+    }
+
+    deinit {
+        task.withValue { $0?.cancel() }
+    }
+
+    var recorded: [AuthEvent] {
+        events.current
+    }
+
+    /// Ждёт событие, подходящее под условие, и возвращает его или `nil` по истечении времени.
+    func waitForEvent(
+        timeout: TimeInterval = 2,
+        where predicate: @escaping @Sendable (AuthEvent) -> Bool
+    ) async -> AuthEvent? {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if let event = events.current.first(where: predicate) {
+                return event
+            }
+            try? await Task.sleep(nanoseconds: 5_000_000)
+        }
+        return nil
     }
 }
 

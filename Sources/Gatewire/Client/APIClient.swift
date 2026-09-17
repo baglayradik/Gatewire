@@ -19,7 +19,12 @@ public final class APIClient: Sendable {
     /// Настройки клиента.
     public let configuration: APIConfiguration
 
+    /// Управление учётными данными: вход, выход и события авторизации.
+    public let auth: AuthController
+
     let session: Session
+    private let schemes: [AuthSchemeID: any AuthScheme]
+    private let defaultAuthorization: AuthorizationRequirement
 
     /// Создаёт клиент с указанными настройками.
     ///
@@ -27,6 +32,29 @@ public final class APIClient: Sendable {
     public init(configuration: APIConfiguration = APIConfiguration()) {
         self.configuration = configuration
         self.session = Session(configuration: configuration.sessionConfiguration())
+
+        var strategies = configuration.additionalAuth
+        if let auth = configuration.auth {
+            strategies[.default] = auth
+        }
+
+        let broadcaster = AuthEventBroadcaster()
+        self.schemes = strategies.reduce(into: [:]) { schemes, element in
+            let context = AuthSchemeContext(
+                scheme: element.key,
+                events: broadcaster,
+                sessionConfiguration: configuration.sessionConfiguration
+            )
+            schemes[element.key] = element.value.makeScheme(context)
+        }
+        self.auth = AuthController(schemes: schemes, broadcaster: broadcaster)
+
+        let defaultAuthorization = configuration.defaultAuthorization
+        self.defaultAuthorization = if defaultAuthorization.mode == .inherit {
+            strategies.isEmpty ? .none : .required
+        } else {
+            defaultAuthorization
+        }
     }
 
     /// Создаёт клиент, изменяя настройки по умолчанию в замыкании.
@@ -182,7 +210,8 @@ public final class APIClient: Sendable {
         }
 
         let urlRequest = try makeURLRequest(for: endpoint)
-        let request = session.download(urlRequest) { _, _ in
+        let interceptor = try await authInterceptor(for: endpoint, url: urlRequest.url)
+        let request = session.download(urlRequest, interceptor: interceptor) { _, _ in
             (destination, [.createIntermediateDirectories, .removePreviousFile])
         }
         if let progress {
@@ -248,11 +277,12 @@ public final class APIClient: Sendable {
         guard Task.isCancelled == false else { throw .cancelled }
 
         let urlRequest = try makeURLRequest(for: endpoint)
+        let interceptor = try await authInterceptor(for: endpoint, url: urlRequest.url)
         let request: DataRequest = switch endpoint.task {
         case let .multipart(buildFormData):
-            session.upload(multipartFormData: buildFormData, with: urlRequest)
+            session.upload(multipartFormData: buildFormData, with: urlRequest, interceptor: interceptor)
         default:
-            session.request(urlRequest)
+            session.request(urlRequest, interceptor: interceptor)
         }
 
         if let uploadProgress {
@@ -284,6 +314,41 @@ public final class APIClient: Sendable {
         }
     }
 
+    /// Выбирает интерцептор авторизации для запроса или `nil`, если запрос выполняется без авторизации.
+    func authInterceptor(
+        for endpoint: some Endpoint,
+        url: URL?
+    ) async throws(NetworkError) -> (any RequestInterceptor)? {
+        let requirement = endpoint.authorization.resolved(default: defaultAuthorization)
+        guard requirement.mode == .required || requirement.mode == .optional else {
+            return nil
+        }
+
+        let isOptional = requirement.mode == .optional
+
+        guard let scheme = schemes[requirement.scheme] else {
+            guard isOptional else {
+                throw .invalidRequest(UsageError(
+                    "Схема авторизации \(requirement.scheme) не настроена в APIConfiguration."
+                ))
+            }
+            return nil
+        }
+
+        guard scheme.allows(url: url) else {
+            guard isOptional else {
+                throw .invalidRequest(UsageError(
+                    "Учётные данные схемы \(requirement.scheme) не отправляются на хост \(url?.host ?? "—")."
+                ))
+            }
+            return nil
+        }
+
+        await scheme.prepare()
+
+        return scheme.interceptor(isOptional: isOptional)
+    }
+
     func makeURLRequest(for endpoint: some Endpoint) throws(NetworkError) -> URLRequest {
         var request: URLRequest
         do {
@@ -306,26 +371,3 @@ public final class APIClient: Sendable {
     }
 }
 
-/// Ошибка неверного использования API клиента.
-struct UsageError: Error, CustomStringConvertible {
-    let description: String
-
-    init(_ description: String) {
-        self.description = description
-    }
-}
-
-/// Возвращает тело ответа как есть; пустой ответ — пустые данные, а не ошибка.
-private struct RawDataSerializer: DataResponseSerializerProtocol {
-    func serialize(
-        request: URLRequest?,
-        response: HTTPURLResponse?,
-        data: Data?,
-        error: (any Error)?
-    ) throws -> Data {
-        if let error {
-            throw error
-        }
-        return data ?? Data()
-    }
-}
