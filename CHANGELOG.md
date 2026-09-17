@@ -13,3 +13,10 @@
 - Каркас пакета с продуктами `Gatewire` и `GatewireTesting`.
 - Типы Alamofire, входящие в публичный API, доступны через `import Gatewire`.
 - CI, проверка ломающих изменений API, workflow релизов и файлы сообщества.
+- Протокол `Endpoint` на основе `URLRequestConvertible` для описания запросов роутерами.
+- `RequestTask`: параметры в строке запроса, JSON, form, multipart и произвольные тела.
+- `APIClient` с методами `request(_:as:)`, `request(_:decoder:)`, `response`, `send` и `data` на `async`/`await` с typed throws.
+- `APIConfiguration`: заголовки по умолчанию, декодер, таймаут, допустимые коды ответа, конфигурация `URLSession`.
+- `NetworkError` и протокол `APIErrorMapper` для доменных ошибок API.
+- `ResponseDecoder` с реализациями `DecodableResponseDecoder` и `StringResponseDecoder`.
+- Пресеты `JSONDecoder.snakeCaseISO8601` и `JSONEncoder.snakeCaseISO8601`.

@@ -51,10 +51,98 @@ targets: [
 
 Пока Gatewire в версии `0.x`, используйте `.upToNextMinor`, чтобы ломающие изменения не подтягивались автоматически.
 
+## Быстрый старт
+
+### 1. Опишите запросы роутером
+
+```swift
+import Gatewire
+
+enum UserRouter: Endpoint {
+    case profile
+    case posts(userID: Int, page: Int)
+    case updateProfile(UpdateProfileRequest)
+    case uploadAvatar(Data)
+
+    var baseURL: URL { URL(string: "https://api.example.com/v1")! }
+
+    var path: String {
+        switch self {
+        case .profile, .updateProfile: "me"
+        case let .posts(userID, _):    "users/\(userID)/posts"
+        case .uploadAvatar:            "me/avatar"
+        }
+    }
+
+    var method: HTTPMethod {
+        switch self {
+        case .profile, .posts: .get
+        case .updateProfile:   .patch
+        case .uploadAvatar:    .post
+        }
+    }
+
+    var task: RequestTask {
+        switch self {
+        case .profile:                  .plain
+        case let .posts(_, page):       .query(["page": page])
+        case let .updateProfile(body):  .json(body)
+        case let .uploadAvatar(image):
+            .multipart { $0.append(image, withName: "avatar", fileName: "avatar.jpg", mimeType: "image/jpeg") }
+        }
+    }
+}
+```
+
+Общие для проекта параметры удобно задать один раз в своём протоколе:
+
+```swift
+protocol AppEndpoint: Endpoint {}
+
+extension AppEndpoint {
+    var baseURL: URL { AppConfig.apiBaseURL }
+    var jsonEncoder: JSONEncoder { .snakeCaseISO8601 }
+}
+```
+
+### 2. Создайте клиент
+
+```swift
+let client = APIClient {
+    $0.decoder = JSONDecoder.snakeCaseISO8601
+    $0.errorMapper = AppErrorMapper()
+}
+```
+
+### 3. Выполняйте запросы
+
+```swift
+let profile = try await client.request(UserRouter.profile, as: UserDTO.self)
+let posts: [PostDTO] = try await client.request(UserRouter.posts(userID: 42, page: 1))
+try await client.send(UserRouter.uploadAvatar(jpegData))
+
+let response = try await client.response(UserRouter.profile, as: UserDTO.self)
+print(response.statusCode, response.headers)
+```
+
+Все методы бросают `NetworkError`:
+
+```swift
+do {
+    try await client.send(UserRouter.updateProfile(changes))
+} catch .unacceptableStatusCode(let response, _) where response.statusCode == 409 {
+    // конфликт версий
+} catch .transport(let urlError) {
+    // нет сети, таймаут
+} catch {
+    // остальные ошибки
+}
+```
+
 ## План развития
 
 - [x] Каркас пакета, CI и файлы сообщества
-- [ ] Ядро: эндпоинты, `RequestTask`, `APIClient`, модель ошибок
+- [x] Ядро: эндпоинты, `RequestTask`, `APIClient`, модель ошибок
 - [ ] Форматы запросов и ответов
 - [ ] Стратегии авторизации и хранение учётных данных
 - [ ] Повторы запросов, логирование с маскированием секретов, проверка сертификатов сервера
