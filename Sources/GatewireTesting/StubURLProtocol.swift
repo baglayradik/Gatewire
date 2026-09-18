@@ -50,56 +50,81 @@ final class StubURLProtocol: URLProtocol {
 
         let request = request
         let recordedRequest = request.recorded()
-        // URLProtocol и его client не помечены как Sendable, но URLSession допускает
-        // вызовы client с другого потока.
-        nonisolated(unsafe) let urlProtocol = self
+        let box = UnsafeProtocolBox(urlProtocol: self)
 
+        // Тип указан явно, а не через `Self`: в методе класса `Self` — это динамический тип `self`,
+        // и замыкание неявно захватило бы несендабельный `self`.
         loadingTask = Task {
-            do {
-                let stub = try await network.response(for: recordedRequest)
+            await StubURLProtocol.respond(to: request, recordedAs: recordedRequest, from: network, through: box)
+        }
+    }
 
-                if stub.delay > 0 {
-                    try await Task.sleep(nanoseconds: UInt64(stub.delay * 1_000_000_000))
-                }
-                try Task.checkCancellation()
+    /// Получает ответ заглушки и передаёт его в URLSession.
+    ///
+    /// Вынесено из `startLoading` в отдельную функцию, чтобы замыкание `Task` захватывало
+    /// только `Sendable`-значения: так код проходит проверку изоляции и в Swift 6.0, и в новых версиях.
+    private static func respond(
+        to request: URLRequest,
+        recordedAs recordedRequest: URLRequest,
+        from network: StubNetwork,
+        through box: UnsafeProtocolBox
+    ) async {
+        let urlProtocol = box.urlProtocol
 
-                if let failure = stub.failure {
-                    urlProtocol.client?.urlProtocol(urlProtocol, didFailWithError: failure)
-                    return
-                }
+        do {
+            let stub = try await network.response(for: recordedRequest)
 
-                guard let url = request.url,
-                      let response = HTTPURLResponse(
-                          url: url,
-                          statusCode: stub.statusCode,
-                          httpVersion: "HTTP/1.1",
-                          headerFields: Self.headers(for: stub)
-                      )
-                else {
-                    urlProtocol.client?.urlProtocol(urlProtocol, didFailWithError: URLError(.badServerResponse))
-                    return
-                }
-
-                if let redirect = Self.redirectRequest(for: response, from: request) {
-                    // URLSession спросит обработчик перенаправлений. Если он откажется следовать
-                    // за перенаправлением, задача должна завершиться исходным ответом 3xx,
-                    // поэтому ответ отдаётся в любом случае.
-                    urlProtocol.client?.urlProtocol(urlProtocol, wasRedirectedTo: redirect, redirectResponse: response)
-                }
-
-                urlProtocol.client?.urlProtocol(urlProtocol, didReceive: response, cacheStoragePolicy: .notAllowed)
-                urlProtocol.client?.urlProtocol(urlProtocol, didLoad: stub.body)
-                urlProtocol.client?.urlProtocolDidFinishLoading(urlProtocol)
-            } catch is CancellationError {
-                // Запрос отменён через stopLoading — URLSession уже знает об этом.
-            } catch {
-                urlProtocol.client?.urlProtocol(urlProtocol, didFailWithError: error)
+            if stub.delay > 0 {
+                try await Task.sleep(nanoseconds: UInt64(stub.delay * 1_000_000_000))
             }
+            try Task.checkCancellation()
+
+            if let failure = stub.failure {
+                urlProtocol.client?.urlProtocol(urlProtocol, didFailWithError: failure)
+                return
+            }
+
+            guard let url = request.url,
+                  let response = HTTPURLResponse(
+                      url: url,
+                      statusCode: stub.statusCode,
+                      httpVersion: "HTTP/1.1",
+                      headerFields: headers(for: stub)
+                  )
+            else {
+                urlProtocol.client?.urlProtocol(urlProtocol, didFailWithError: URLError(.badServerResponse))
+                return
+            }
+
+            if let redirect = redirectRequest(for: response, from: request) {
+                // URLSession спросит обработчик перенаправлений. Если он откажется следовать
+                // за перенаправлением, задача должна завершиться исходным ответом 3xx,
+                // поэтому ответ отдаётся в любом случае.
+                urlProtocol.client?.urlProtocol(urlProtocol, wasRedirectedTo: redirect, redirectResponse: response)
+            }
+
+            urlProtocol.client?.urlProtocol(urlProtocol, didReceive: response, cacheStoragePolicy: .notAllowed)
+            urlProtocol.client?.urlProtocol(urlProtocol, didLoad: stub.body)
+            urlProtocol.client?.urlProtocolDidFinishLoading(urlProtocol)
+        } catch is CancellationError {
+            // Запрос отменён через stopLoading — URLSession уже знает об этом.
+        } catch {
+            urlProtocol.client?.urlProtocol(urlProtocol, didFailWithError: error)
         }
     }
 
     override func stopLoading() {
         loadingTask?.cancel()
+    }
+
+    /// Передаёт `URLProtocol` в задачу, которая формирует ответ.
+    ///
+    /// `URLProtocol` и его `client` не помечены как `Sendable`, но URLSession допускает вызовы
+    /// `client` с другого потока, а сам протокол после `startLoading` задача только читает.
+    /// Обёртка нужна вместо `nonisolated(unsafe)`-переменной: Swift 6.0 не разрешает передать
+    /// в `Task` замыкание, захватывающее такую переменную.
+    private struct UnsafeProtocolBox: @unchecked Sendable {
+        let urlProtocol: StubURLProtocol
     }
 
     private static func headers(for stub: StubResponse) -> [String: String] {
