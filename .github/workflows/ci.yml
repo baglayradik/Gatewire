@@ -33,6 +33,39 @@ jobs:
       - name: Test
         run: swift test -Xswiftc -warnings-as-errors
 
+  # README обещает поддержку Xcode 16.0+ (Swift 6.0). Проверяем пакет на самом старом Xcode 16.x,
+  # который есть на раннере, без -warnings-as-errors: новые компиляторы предупреждают о другом.
+  minimum-xcode:
+    name: Minimum Xcode (16.x)
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Select oldest Xcode 16
+        run: |
+          xcode=$(ls -d /Applications/Xcode_16*.app 2>/dev/null | python3 -c '
+          import re, sys
+          paths = [line.strip() for line in sys.stdin if line.strip()]
+          key = lambda path: [int(part) for part in re.findall(r"\d+", path.rsplit("/", 1)[-1])]
+          print(min(paths, key=key) if paths else "")
+          ')
+          if [ -z "$xcode" ]; then
+            echo "::error::На раннере нет Xcode 16.x. Доступны:"
+            ls -d /Applications/Xcode*.app
+            exit 1
+          fi
+          echo "Выбран $xcode"
+          sudo xcode-select -s "$xcode"
+          xcodebuild -version
+          swift --version
+
+      - name: Build
+        run: swift build
+
+      - name: Test
+        run: swift test
+
   ios:
     name: iOS Simulator
     runs-on: macos-latest
