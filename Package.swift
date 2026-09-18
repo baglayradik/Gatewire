@@ -34,7 +34,12 @@ let package = Package(
         ),
         .testTarget(
             name: "GatewireTests",
-            dependencies: ["Gatewire", "GatewireTesting", "Alamofire"],
+            dependencies: ["Gatewire", "GatewireTesting"],
+            swiftSettings: swiftSettings
+        ),
+        .testTarget(
+            name: "GatewireTestingTests",
+            dependencies: ["Gatewire", "GatewireTesting"],
             swiftSettings: swiftSettings
         ),
     ]

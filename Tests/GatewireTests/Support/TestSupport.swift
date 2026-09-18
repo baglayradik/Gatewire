@@ -1,5 +1,6 @@
 import Foundation
 import Gatewire
+import GatewireTesting
 import Testing
 
 /// Потокобезопасный контейнер для значений, которые обработчик запроса передаёт тесту.
@@ -38,7 +39,13 @@ struct TestEndpoint: Endpoint {
     var formEncoder: URLEncodedFormEncoder { formEncoderFactory() }
 }
 
-/// Клиент, запросы которого обрабатывает `MockURLProtocol`, и базовый адрес с уникальным хостом.
+/// Обработчик запроса в тестах: возвращает HTTP-ответ и тело или бросает ошибку сети.
+typealias MockHandler = @Sendable (URLRequest) async throws -> (HTTPURLResponse, Data)
+
+/// Клиент, запросы которого обрабатывает заглушка на уникальном хосте, и базовый адрес этого хоста.
+///
+/// Построен на публичном `StubNetwork` из `GatewireTesting`, поэтому внутренние тесты
+/// заодно проверяют и модуль тестирования.
 struct MockServer: Sendable {
     let client: APIClient
     let baseURL: URL
@@ -47,13 +54,13 @@ struct MockServer: Sendable {
     /// Все запросы, которые дошли до сети, в порядке отправки.
     let requests = Locked<[URLRequest]>([])
 
-    init(handler: @escaping MockURLProtocol.Handler = { request in try MockServer.respond(to: request) }) {
+    init(handler: @escaping MockHandler = { request in try MockServer.respond(to: request) }) {
         self.init(configure: { _ in }, handler: handler)
     }
 
     init(
         configure: (inout APIConfiguration) -> Void,
-        handler: @escaping MockURLProtocol.Handler = { request in try MockServer.respond(to: request) }
+        handler: @escaping MockHandler = { request in try MockServer.respond(to: request) }
     ) {
         let lastRequest = lastRequest
         let requests = requests
@@ -71,18 +78,28 @@ struct MockServer: Sendable {
         }
     }
 
-    /// Регистрирует уникальный хост в `MockURLProtocol` и возвращает его вместе с базовым адресом.
-    static func registerHost(handler: @escaping MockURLProtocol.Handler) -> (host: String, baseURL: URL) {
+    /// Общая подменённая сеть внутренних тестов: каждый сервер получает в ней свой хост.
+    static let network = StubNetwork()
+
+    /// Регистрирует уникальный хост и возвращает его вместе с базовым адресом.
+    static func registerHost(handler: @escaping MockHandler) -> (host: String, baseURL: URL) {
         let host = "\(UUID().uuidString.lowercased()).gatewire.test"
-        MockURLProtocol.register(host: host, handler: handler)
+        network
+            .on(where: { $0.url?.host == host })
+            .respond { request in
+                let (response, data) = try await handler(request)
+                return StubResponse(
+                    statusCode: response.statusCode,
+                    headers: response.allHeaderFields as? [String: String] ?? [:],
+                    body: data
+                )
+            }
 
         return (host, URL(string: "https://\(host)/v1")!)
     }
 
-    static let sessionConfiguration: @Sendable () -> URLSessionConfiguration = {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [MockURLProtocol.self]
-        return configuration
+    static var sessionConfiguration: @Sendable () -> URLSessionConfiguration {
+        network.sessionConfiguration
     }
 
     func endpoint(

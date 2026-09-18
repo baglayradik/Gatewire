@@ -194,6 +194,25 @@ let client = APIClient {
 При перенаправлении на другой хост `Authorization`, `Cookie` и подобные заголовки убираются
 автоматически. Подробнее — в статье документации «Надёжность и безопасность».
 
+### 6. Тестируйте без сети
+
+```swift
+import GatewireTesting
+
+@Test func showsProfile() async throws {
+    let network = StubNetwork()
+    network.on(UserRouter.profile).respond(json: #"{"id": 1, "name": "Test"}"#)
+
+    let profile = try await network.makeClient().request(UserRouter.profile, as: UserDTO.self)
+
+    #expect(profile.name == "Test")
+    #expect(network.requests(to: UserRouter.profile).count == 1)
+}
+```
+
+Заглушки изолированы между тестами, поэтому тесты могут выполняться параллельно.
+Подробнее — в документации модуля `GatewireTesting`.
+
 Все методы бросают `NetworkError`:
 
 ```swift
@@ -215,7 +234,7 @@ do {
 - [x] Форматы запросов и ответов
 - [x] Стратегии авторизации и хранение учётных данных
 - [x] Повторы запросов, логирование с маскированием секретов, проверка сертификатов сервера
-- [ ] Модуль `GatewireTesting`
+- [x] Модуль `GatewireTesting`
 - [ ] Документация и пример приложения
 - [ ] `1.0.0`
 
