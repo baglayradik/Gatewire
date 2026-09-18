@@ -41,6 +41,24 @@ public struct APIConfiguration: Sendable {
     /// Коды ответа, которые считаются успешными. По умолчанию `200..<300`.
     public var acceptableStatusCodes: Range<Int> = 200..<300
 
+    /// Настройки повторов запросов. По умолчанию два повтора идемпотентных запросов.
+    public var retry: RetryConfiguration = .default
+
+    /// Настройки логирования. По умолчанию логирование выключено.
+    public var logging: LoggingConfiguration = .disabled
+
+    /// Проверка сертификата сервера. По умолчанию `nil` — системная проверка.
+    public var serverTrust: ServerTrustConfiguration?
+
+    /// Что делать с перенаправлениями.
+    ///
+    /// По умолчанию клиент следует за ними, но убирает `Authorization`, `Cookie` и другие
+    /// чувствительные заголовки при переходе на другой хост.
+    public var redirects: RedirectConfiguration = .followStrippingSensitiveHeaders
+
+    /// Дополнительные мониторы событий Alamofire, например для метрик или своего логирования.
+    public var eventMonitors: [any EventMonitor] = []
+
     /// Фабрика конфигурации `URLSession`. По умолчанию `URLSessionConfiguration.default`.
     ///
     /// Используйте, чтобы настроить кеширование, прокси или подменить протоколы в тестах.

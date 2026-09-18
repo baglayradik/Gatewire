@@ -1,3 +1,4 @@
+import Alamofire
 import Foundation
 
 /// Подменяет сетевой слой `URLSession` в тестах.
@@ -39,6 +40,14 @@ final class MockURLProtocol: URLProtocol {
             do {
                 let (response, data) = try await handler(request)
                 try Task.checkCancellation()
+
+                if let redirect = Self.redirectRequest(for: response, from: request) {
+                    // URLSession спросит обработчик перенаправлений. Если он откажется следовать
+                    // за перенаправлением, задача должна завершиться исходным ответом 3xx,
+                    // поэтому ответ отдаём в любом случае.
+                    urlProtocol.client?.urlProtocol(urlProtocol, wasRedirectedTo: redirect, redirectResponse: response)
+                }
+
                 urlProtocol.client?.urlProtocol(urlProtocol, didReceive: response, cacheStoragePolicy: .notAllowed)
                 urlProtocol.client?.urlProtocol(urlProtocol, didLoad: data)
                 urlProtocol.client?.urlProtocolDidFinishLoading(urlProtocol)
@@ -48,6 +57,28 @@ final class MockURLProtocol: URLProtocol {
                 urlProtocol.client?.urlProtocol(urlProtocol, didFailWithError: error)
             }
         }
+    }
+
+    /// Запрос перенаправления для ответа 3xx с заголовком `Location`.
+    ///
+    /// URLSession не строит такой запрос сам, когда ответ приходит из URLProtocol.
+    private static func redirectRequest(for response: HTTPURLResponse, from request: URLRequest) -> URLRequest? {
+        guard 300..<400 ~= response.statusCode,
+              let location = response.value(forHTTPHeaderField: "Location"),
+              let url = URL(string: location, relativeTo: request.url)
+        else {
+            return nil
+        }
+
+        var redirect = request
+        redirect.url = url
+        // 303 и большинство клиентов для 301/302 меняют метод на GET, 307 и 308 сохраняют его.
+        if [301, 302, 303].contains(response.statusCode), request.method != .get, request.method != .head {
+            redirect.method = .get
+            redirect.httpBody = nil
+        }
+
+        return redirect
     }
 
     override func stopLoading() {

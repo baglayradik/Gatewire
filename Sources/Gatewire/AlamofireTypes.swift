@@ -20,3 +20,7 @@ public typealias Request = Alamofire.Request
 public typealias Session = Alamofire.Session
 public typealias AuthenticationCredential = Alamofire.AuthenticationCredential
 public typealias AuthenticationError = Alamofire.AuthenticationError
+public typealias RedirectHandler = Alamofire.RedirectHandler
+public typealias Redirector = Alamofire.Redirector
+public typealias ServerTrustManager = Alamofire.ServerTrustManager
+public typealias ServerTrustEvaluating = Alamofire.ServerTrustEvaluating

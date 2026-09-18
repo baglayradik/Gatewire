@@ -35,3 +35,9 @@
 - `APIClient.auth` (`AuthController`): вход, выход, текущие учётные данные и поток событий `AuthEvent`.
 - `NetworkError.unauthenticated` и `NetworkError.authenticationFailed` в модели ошибок.
 - Статья документации «Авторизация».
+- `RetryConfiguration`: повторы идемпотентных запросов с экспоненциальной задержкой; 401 и 403 не повторяются.
+- `LoggingConfiguration` и логгер с маскированием секретов в адресах, заголовках, JSON- и form-телах.
+- `RedirectConfiguration`: по умолчанию при переходе на другой хост убираются `Authorization`, `Cookie` и подобные заголовки.
+- `ServerTrustConfiguration`: закрепление сертификатов и публичных ключей, в том числе из бандла.
+- `APIConfiguration.eventMonitors` для своих мониторов событий Alamofire.
+- Статья документации «Надёжность и безопасность».

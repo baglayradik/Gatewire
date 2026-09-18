@@ -14,6 +14,7 @@ Gatewire позволяет описывать API роутерами, реал�
 
 - <doc:APIFormats>
 - <doc:Authorization>
+- <doc:Reliability>
 
 ### Описание запросов
 
@@ -59,6 +60,13 @@ Gatewire позволяет описывать API роутерами, реал�
 - ``OAuth2TokenRefresher``
 - ``OAuth2Error``
 - ``KeychainError``
+
+### Надёжность и безопасность
+
+- ``RetryConfiguration``
+- ``LoggingConfiguration``
+- ``RedirectConfiguration``
+- ``ServerTrustConfiguration``
 
 ### Ошибки
 

@@ -31,7 +31,19 @@ public final class APIClient: Sendable {
     /// - Parameter configuration: Настройки клиента. По умолчанию — значения по умолчанию ``APIConfiguration``.
     public init(configuration: APIConfiguration = APIConfiguration()) {
         self.configuration = configuration
-        self.session = Session(configuration: configuration.sessionConfiguration())
+
+        var eventMonitors = configuration.eventMonitors
+        if let logger = configuration.logging.makeEventMonitor() {
+            eventMonitors.append(logger)
+        }
+
+        self.session = Session(
+            configuration: configuration.sessionConfiguration(),
+            interceptor: configuration.retry.makeInterceptor(),
+            serverTrustManager: configuration.serverTrust?.makeManager(),
+            redirectHandler: configuration.redirects.makeHandler(),
+            eventMonitors: eventMonitors
+        )
 
         var strategies = configuration.additionalAuth
         if let auth = configuration.auth {
